@@ -6,12 +6,9 @@ This repository is my hands-on exploration of serverless architecture, from Lamb
 
 The goal is not simply to learn AWS services, but to understand **when to use them, how they behave under real workloads, what tradeoffs they introduce, and how different serverless components work together.**
 
-## Repository Structure
-
-The repository is organized by project rather than by AWS service.
 
 
-```
+
 
 ## Learning Roadmap
 
