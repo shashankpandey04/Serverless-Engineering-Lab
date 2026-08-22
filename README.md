@@ -125,7 +125,7 @@ Depending on the project, this may include:
 
 Results and benchmark data are kept alongside the relevant project.
 
-```
+
 
 Not every project will contain every directory. The structure depends on the experiment.
 
