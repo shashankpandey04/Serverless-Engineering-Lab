@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# AWS SAM
+.aws-sam/
+
+# Environment variables
+.env
+.env.*
+
+# Benchmark results
+results/*.json
+results/*.csv
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
