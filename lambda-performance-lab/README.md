@@ -1,49 +1,60 @@
 # Lambda Performance Lab
 
-A benchmarking project to measure how AWS Lambda memory configuration affects **execution performance, memory usage, and cost**.
+A benchmarking project that measures how AWS Lambda memory configuration affects **execution performance, memory usage, and estimated compute cost** for a CPU-bound workload.
 
 ## Research Question
 
-> **How do Lambda memory configurations affect performance and cost?**
+> **How does AWS Lambda memory configuration affect performance and cost?**
 
-The experiment runs the same CPU-bound workload using:
+The same workload was tested on four Lambda memory configurations:
 
 * 128 MB
 * 256 MB
 * 512 MB
 * 1024 MB
 
-Only the Lambda memory configuration changes between experiments.
+Only the configured Lambda memory was changed between experiments.
+
+---
 
 ## Architecture
 
 ```text
-Your PC
-┌─────────────────────────┐
-│ benchmark/cpu.py        │
-│                         │
-│ Boto3 → invoke Lambda   │
-└────────────┬────────────┘
-             │
-             ▼
+Local Machine
+┌─────────────────────────────┐
+│ benchmark/cpu.py            │
+│                             │
+│ Boto3                       │
+│      │                      │
+│      ▼                      │
+│ Invoke AWS Lambda           │
+└──────────────┬──────────────┘
+               │
+               ▼
 AWS Lambda
-┌─────────────────────────┐
-│ src/app.py              │
-│                         │
-│ Run CPU workload        │
-│ Measure execution       │
-│ Measure memory          │
-│ Return JSON             │
-└────────────┬────────────┘
-             │
-             ▼
-Your PC
-┌─────────────────────────┐
-│ results/results.json    │
-└─────────────────────────┘
+┌─────────────────────────────┐
+│ src/app.py                  │
+│                             │
+│ CPU-bound SHA-256 workload  │
+│                             │
+│ Measure execution           │
+│ Measure memory usage        │
+│ Return JSON                 │
+└──────────────┬──────────────┘
+               │
+               ▼
+Local Machine
+┌─────────────────────────────┐
+│ results/results.json        │
+│                             │
+│ benchmark/cpu.py            │
+│ saves collected results     │
+└─────────────────────────────┘
 ```
 
-The Lambda **does not save results**. It returns measurements to the local benchmark script, which saves them locally.
+The Lambda function **does not save benchmark results**. It returns the measurements, and the local benchmark runner stores them in `results/results.json`.
+
+---
 
 ## Project Structure
 
@@ -54,10 +65,15 @@ lambda-performance-lab/
 │   └── app.py
 │
 ├── benchmark/
-│   └── cpu.py
+│   ├── cpu.py
+│   └── charts.py
 │
 ├── results/
-│   └── results.json
+│   ├── results.json
+│   ├── execution_time.png
+│   ├── cost_comparison.png
+│   ├── speedup.png
+│   └── memory_usage.png
 │
 ├── template.yaml
 ├── samconfig.toml
@@ -67,19 +83,23 @@ lambda-performance-lab/
 └── .gitignore
 ```
 
-### Files
+### File Responsibilities
 
-| File                   | Purpose                             |
-| ---------------------- | ----------------------------------- |
-| `src/app.py`           | Lambda function and CPU workload    |
-| `benchmark/cpu.py`     | Local benchmark runner using Boto3  |
-| `results/results.json` | Locally collected benchmark data    |
-| `template.yaml`        | AWS SAM infrastructure definition   |
-| `samconfig.toml`       | Saved SAM deployment configuration  |
-| `diagnose.md`          | Development and troubleshooting log |
-| `requirements.txt`     | Python dependencies                 |
+| File                   | Purpose                                              |
+| ---------------------- | ---------------------------------------------------- |
+| `src/app.py`           | AWS Lambda handler and CPU workload                  |
+| `benchmark/cpu.py`     | Locally invokes deployed Lambda and collects results |
+| `benchmark/charts.py`  | Generates analysis charts from `results.json`        |
+| `results/results.json` | Raw benchmark measurements                           |
+| `results/*.png`        | Generated charts                                     |
+| `template.yaml`        | AWS SAM infrastructure configuration                 |
+| `samconfig.toml`       | Saved SAM deployment configuration                   |
+| `diagnose.md`          | Development and troubleshooting log                  |
+| `requirements.txt`     | Python dependencies                                  |
 
-## Requirements
+---
+
+# Requirements
 
 Install:
 
@@ -87,9 +107,9 @@ Install:
 * Docker
 * AWS CLI
 * AWS SAM CLI
-* An AWS account
+* AWS account
 
-Verify:
+Verify the installations:
 
 ```powershell
 python --version
@@ -98,16 +118,18 @@ aws --version
 sam --version
 ```
 
-## Setup
+---
 
-### 1. Clone the repository
+# Setup
+
+## 1. Clone the Repository
 
 ```powershell
 git clone <repository-url>
 cd lambda-performance-lab
 ```
 
-### 2. Create a virtual environment
+## 2. Create Virtual Environment
 
 ```powershell
 python -m venv .venv
@@ -119,37 +141,43 @@ Activate it:
 .venv\Scripts\activate
 ```
 
-### 3. Install dependencies
+## 3. Install Dependencies
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-## AWS Configuration
+---
 
-Configure the AWS CLI using an IAM identity with permission to deploy and invoke the required resources:
+# AWS Configuration
+
+Configure the AWS CLI using an IAM identity with the required permissions:
 
 ```powershell
 aws configure
 ```
 
-Set the region to the region used for the experiment, for example:
+The experiment uses:
 
 ```text
-ap-south-1
+Region: ap-south-1
+Architecture: x86_64
+Runtime: Python 3.13
 ```
 
-Verify the configuration:
+Verify the AWS identity:
 
 ```powershell
 aws sts get-caller-identity
 ```
 
-## Local Lambda Testing
+---
 
-Local testing uses **AWS SAM + Docker**.
+# Local Lambda Testing
 
-Build the project:
+AWS SAM and Docker are used to test the Lambda locally.
+
+Build the application:
 
 ```powershell
 sam build
@@ -161,38 +189,47 @@ Invoke the Lambda locally:
 sam local invoke BenchmarkFunction
 ```
 
-This validates the Lambda code and response format before using real AWS Lambda executions.
+Local execution is used to verify:
 
-**Local performance numbers are not used as the final benchmark data.**
+* Lambda handler correctness
+* Workload execution
+* Response structure
+* Local development behavior
 
-## Deploy to AWS
+Local execution times are **not used as the final AWS benchmark data**.
 
-The Lambda is deployed using AWS SAM.
+---
 
-Build:
+# Deploy to AWS
+
+Build the application:
 
 ```powershell
 sam build
 ```
 
-First deployment:
+For the first deployment:
 
 ```powershell
 sam deploy --guided
 ```
 
-Recommended configuration:
+The project was configured with:
 
 ```text
 Stack Name: lambda-performance-lab
-AWS Region: ap-south-1
+Region: ap-south-1
 Confirm changeset: Y
 Allow SAM CLI IAM role creation: Y
 Disable rollback: N
 Save arguments to configuration file: Y
 ```
 
-After the first deployment, `samconfig.toml` stores the deployment configuration.
+After the first guided deployment, the settings are stored in:
+
+```text
+samconfig.toml
+```
 
 Future deployments can use:
 
@@ -201,7 +238,9 @@ sam build
 sam deploy
 ```
 
-## Verify the Lambda
+---
+
+# Verify Lambda Configuration
 
 List the deployed function:
 
@@ -217,14 +256,27 @@ Check the configuration:
 ```powershell
 aws lambda get-function-configuration `
     --function-name <FUNCTION_NAME> `
-    --query "{Memory:MemorySize,Runtime:Runtime,Timeout:Timeout}"
+    --query "{Memory:MemorySize,Architecture:Architectures[0],Runtime:Runtime,Timeout:Timeout}"
 ```
 
-## Run the Benchmark
+The deployed experiment used:
 
-`benchmark/cpu.py` runs **locally** and invokes the deployed Lambda using Boto3.
+```text
+Runtime:     Python 3.13
+Architecture: x86_64
+Region:      ap-south-1
+Timeout:     30 seconds
+```
 
-Set the deployed Lambda name in:
+---
+
+# Benchmark Runner
+
+`benchmark/cpu.py` runs **locally**.
+
+It uses Boto3 to invoke the deployed AWS Lambda.
+
+Set the deployed function name in:
 
 ```text
 benchmark/cpu.py
@@ -234,34 +286,45 @@ benchmark/cpu.py
 FUNCTION_NAME = "YOUR_LAMBDA_FUNCTION_NAME"
 ```
 
-Then run:
+Run the benchmark:
 
 ```powershell
-python benchmark\cpu.py
+py benchmark/cpu.py
 ```
 
 The runner:
 
-1. Invokes the AWS Lambda.
-2. Receives the Lambda's JSON response.
-3. Repeats the benchmark.
-4. Adds local run metadata.
-5. Calculates basic statistics.
-6. Saves the measurements to `results/results.json`.
+1. Invokes AWS Lambda.
+2. Receives the Lambda response.
+3. Performs 10 invocations.
+4. Collects execution and memory measurements.
+5. Saves the results locally.
 
-## Current CPU Workload
+The raw measurements are stored in:
 
-The Lambda runs a deterministic SHA-256 workload.
+```text
+results/results.json
+```
 
-The workload uses a fixed 10 MB dataset and performs repeated hashing operations.
+---
 
-The resulting SHA-256 digest is returned with every invocation.
+# CPU Workload
 
-The digest is used to verify that every benchmark configuration performs the same computation.
+The Lambda runs a deterministic SHA-256 CPU workload.
 
-## Lambda Response
+The workload uses a fixed 10 MB input and performs repeated hashing operations.
 
-A successful invocation returns:
+The workload was calibrated after the initial 128 MB configuration timed out with the original workload.
+
+The final benchmark workload performs 10 iterations, resulting in approximately 100 MB of hashing work.
+
+The SHA-256 digest is returned with every invocation to verify that the same computation is performed across all configurations.
+
+---
+
+# Lambda Response
+
+A successful invocation returns data similar to:
 
 ```json
 {
@@ -273,17 +336,19 @@ A successful invocation returns:
 }
 ```
 
-| Field             | Meaning                                  |
-| ----------------- | ---------------------------------------- |
-| `duration_ms`     | Time measured for the workload           |
-| `memory_limit_mb` | Configured Lambda memory                 |
-| `memory_used_mb`  | Observed process memory                  |
-| `request_id`      | Lambda invocation ID                     |
-| `digest`          | SHA-256 result for workload verification |
+| Field             | Description                                   |
+| ----------------- | --------------------------------------------- |
+| `duration_ms`     | Measured workload execution time              |
+| `memory_limit_mb` | Configured Lambda memory                      |
+| `memory_used_mb`  | Observed memory usage                         |
+| `request_id`      | Lambda invocation request ID                  |
+| `digest`          | SHA-256 result used for workload verification |
 
-## Benchmark Procedure
+---
 
-The experiment compares:
+# Benchmark Methodology
+
+Four Lambda configurations were tested:
 
 ```text
 128 MB
@@ -292,39 +357,34 @@ The experiment compares:
 1024 MB
 ```
 
-For each configuration:
+Each configuration was tested with **10 invocations**, resulting in:
 
 ```text
-Change MemorySize
-      ↓
-sam build
-      ↓
-sam deploy
-      ↓
-Verify configuration
-      ↓
-Run benchmark
-      ↓
-Save results locally
+4 configurations × 10 runs = 40 AWS Lambda executions
 ```
 
-The following remain unchanged:
+The following were kept constant:
 
-* Lambda code
+* Lambda source code
 * Python runtime
 * Architecture
 * AWS region
 * CPU workload
 * Input data
-* Number of benchmark runs
+* Number of runs
 * Benchmark procedure
 
-This keeps **memory allocation as the primary experimental variable**.
+The primary experimental variable was:
 
-## Results
+```text
+Lambda Memory Allocation
+```
 
-Final results will be populated from real AWS Lambda executions.
-### Performance
+---
+
+# Results
+
+## Performance
 
 |  Memory |    Average |     Median |        p95 |        p99 |
 | ------: | ---------: | ---------: | ---------: | ---------: |
@@ -333,7 +393,9 @@ Final results will be populated from real AWS Lambda executions.
 |  512 MB |  875.62 ms |  873.10 ms |  899.50 ms |  906.16 ms |
 | 1024 MB |  517.86 ms |  518.57 ms |  530.82 ms |  534.89 ms |
 
-### Memory Usage
+---
+
+## Memory Usage
 
 |  Memory | Average Used | Maximum Used | Utilization |
 | ------: | -----------: | -----------: | ----------: |
@@ -342,83 +404,141 @@ Final results will be populated from real AWS Lambda executions.
 |  512 MB |     28.74 MB |     28.81 MB |       5.63% |
 | 1024 MB |     28.47 MB |     28.49 MB |       2.78% |
 
+The workload's actual memory usage remained approximately **28–29 MB** across all configurations.
 
+---
 
+# Speedup
 
+Using 128 MB as the baseline:
 
+|  Memory | Average Duration | Speedup vs 128 MB |
+| ------: | ---------------: | ----------------: |
+|  128 MB |       4147.03 ms |             1.00× |
+|  256 MB |       1930.65 ms |             2.15× |
+|  512 MB |        875.62 ms |             4.74× |
+| 1024 MB |        517.86 ms |             8.01× |
 
-### Cost
+The 1024 MB configuration completed the workload approximately **8× faster** than the 128 MB configuration.
 
-|  Memory | Cost / Invocation | Cost / 1K | Cost / 1M |
-| ------: | ----------------: | --------: | --------: |
-|  128 MB |           Pending |   Pending |   Pending |
-|  256 MB |           Pending |   Pending |   Pending |
-|  512 MB |           Pending |   Pending |   Pending |
-| 1024 MB |           Pending |   Pending |   Pending |
+---
 
-### Performance vs Cost
+# Estimated Compute Cost
 
-|  Memory | Relative Performance | Relative Cost | Efficiency |
-| ------: | -------------------: | ------------: | ---------: |
-|  128 MB |              Pending |       Pending |    Pending |
-|  256 MB |              Pending |       Pending |    Pending |
-|  512 MB |              Pending |       Pending |    Pending |
-| 1024 MB |              Pending |       Pending |    Pending |
-
-## Current Results
-
-### 128 MB Baseline
-
-The first successful AWS benchmark contains **10 runs**.
-
-Observed values:
-
-* Average duration: approximately **4.15 seconds**
-* Median duration: approximately **4.12 seconds**
-* Minimum: **4.056 seconds**
-* Maximum: **4.276 seconds**
-* Memory used: approximately **28.77 MB**
-* Successful runs: **10/10**
-
-The complete raw measurements are stored in:
+Cost calculations use the measured execution time and allocated Lambda memory.
 
 ```text
-results/results.json
+GB-seconds =
+Memory (GB) × Duration (seconds)
 ```
 
-## Local vs AWS
-
-Local SAM/Docker testing is used for **correctness and development**.
-
-It is not used as the authoritative performance dataset.
-
-The same workload initially behaved very differently locally and on AWS. The original workload completed locally in under one second but timed out at 128 MB on AWS.
-
-The workload was therefore reduced and successfully calibrated on the 128 MB AWS Lambda configuration.
-
-See `diagnose.md` for the complete debugging record.
-
-## Analysis
-
-The experiment evaluates three primary factors:
+The analysis uses:
 
 ```text
-Performance
-     +
-Memory Usage
-     +
-Cost
+$0.000020 per GB-second
 ```
 
-The goal is not simply to find the fastest Lambda.
+for the x86_64 Lambda compute estimate.
 
-The goal is to determine:
+|  Memory | Avg Duration | GB-seconds / Invocation | Estimated Cost / Invocation | Estimated Cost / 1M |
+| ------: | -----------: | ----------------------: | --------------------------: | ------------------: |
+|  128 MB |    4.14703 s |                 0.51838 |                 $0.00001037 |              $10.37 |
+|  256 MB |    1.93065 s |                 0.48266 |                 $0.00000965 |               $9.65 |
+|  512 MB |    0.87562 s |                 0.43781 |                 $0.00000876 |               $8.76 |
+| 1024 MB |    0.51786 s |                 0.51786 |                 $0.00001036 |              $10.36 |
 
-> **Which memory configuration provides the best performance-to-cost trade-off for this CPU-bound workload?**
+These are **estimated compute costs**, not exact AWS invoices. Request charges and other AWS account-level factors are not included.
 
-## Limitations
+---
 
-Results are specific to the tested workload and environment.
+# Performance vs Cost
+
+Using 128 MB as the baseline:
+
+|  Memory | Avg Duration | Speedup | Estimated Cost / 1M | Cost vs 128 MB |
+| ------: | -----------: | ------: | ------------------: | -------------: |
+|  128 MB |   4147.03 ms |   1.00× |              $10.37 |          1.00× |
+|  256 MB |   1930.65 ms |   2.15× |               $9.65 |          0.93× |
+|  512 MB |    875.62 ms |   4.74× |               $8.76 |          0.84× |
+| 1024 MB |    517.86 ms |   8.01× |              $10.36 |          1.00× |
+
+For this workload, **512 MB provides the lowest estimated compute cost while delivering a substantial performance improvement over lower memory configurations**.
+
+1024 MB provides the fastest execution, but its estimated compute cost is approximately the same as the 128 MB configuration.
+
+---
+
+# Charts
+
+Charts are generated from the raw `results/results.json` dataset using:
+
+```text
+benchmark/charts.py
+```
+
+Generate all charts:
+
+```powershell
+py benchmark/charts.py
+```
+
+Generated files:
+
+```text
+results/
+├── execution_time.png
+├── cost_comparison.png
+├── speedup.png
+└── memory_usage.png
+```
+
+The charts are derived from the recorded benchmark data rather than manually entered values.
+
+---
+
+# Local vs AWS Findings
+
+Local SAM/Docker testing and real AWS Lambda execution produced substantially different execution times.
+
+The original workload completed locally in under one second but timed out on the 128 MB AWS Lambda configuration.
+
+The workload was subsequently reduced and successfully calibrated for the real AWS environment.
+
+This demonstrated that:
+
+> **Local SAM/Docker execution should be used for functional testing, not as the authoritative source for AWS Lambda performance measurements.**
+
+The final performance dataset therefore comes exclusively from real AWS Lambda executions.
+
+Detailed troubleshooting and diagnosis are documented in:
+
+```text
+diagnose.md
+```
+
+---
+
+# Key Findings
+
+For this CPU-bound workload:
+
+* Increasing Lambda memory significantly reduced execution time.
+* Actual memory usage remained almost constant at approximately 28–29 MB.
+* 256 MB was approximately **2.15× faster** than 128 MB.
+* 512 MB was approximately **4.74× faster** than 128 MB.
+* 1024 MB was approximately **8.01× faster** than 128 MB.
+* 512 MB produced the lowest estimated compute cost among the tested configurations.
+* 1024 MB achieved the lowest execution time but did not provide the lowest estimated cost.
+
+The results demonstrate why Lambda memory should not be selected solely based on the application's RAM requirements.
+
+For CPU-bound workloads, increasing memory can also increase available compute capacity and significantly reduce execution time.
+
+---
+
+# Limitations
+
+The results apply specifically to this workload and experimental environment.
 
 Lambda performance can vary due to factors including:
 
@@ -428,25 +548,86 @@ Lambda performance can vary due to factors including:
 * AWS infrastructure conditions
 * Region
 * Runtime behavior
+* Number of benchmark samples
 
-The experiment therefore focuses on comparing configurations under consistent conditions.
+Only 10 invocations were collected per configuration, so p95 and p99 values should be interpreted as descriptive measurements rather than statistically robust tail-latency estimates.
 
-## Article
+The cost analysis is an estimated compute-cost comparison and does not represent an exact AWS invoice.
 
-### I Tested AWS Lambda at 128MB, 256MB, 512MB and 1GB: Here's What Happened
+---
 
-The final article will document:
+# Troubleshooting
 
-* Experimental methodology
-* AWS configuration
-* Raw benchmark results
-* Performance comparison
-* Cost analysis
-* Charts
-* Findings
-* Practical conclusions
+### Lambda Timeout
 
-## Status
+The original workload caused the 128 MB Lambda to reach the 30-second timeout.
+
+CloudWatch showed:
+
+```text
+Memory Size: 128 MB
+Max Memory Used: 51 MB
+Duration: 30000 ms
+Status: timeout
+```
+
+This indicated an execution-time/compute limitation rather than memory exhaustion.
+
+CloudWatch logs can be inspected with:
+
+```powershell
+aws logs tail /aws/lambda/<FUNCTION_NAME> `
+    --since 10m `
+    --region ap-south-1
+```
+
+### Direct Lambda Invocation
+
+To test the deployed function without the benchmark runner:
+
+```powershell
+aws lambda invoke `
+    --function-name <FUNCTION_NAME> `
+    --payload '{}' `
+    response.json
+```
+
+Then:
+
+```powershell
+Get-Content response.json
+```
+
+Detailed diagnosis is documented in `diagnose.md`.
+
+---
+
+# Results Data
+
+All raw benchmark measurements are stored in:
+
+```text
+results/results.json
+```
+
+The dataset contains:
+
+```text
+128 MB   → 10 runs
+256 MB   → 10 runs
+512 MB   → 10 runs
+1024 MB  → 10 runs
+```
+
+Total:
+
+```text
+40 AWS Lambda benchmark runs
+```
+
+---
+
+# Status
 
 * [x] Research question defined
 * [x] Project structure created
@@ -459,17 +640,42 @@ The final article will document:
 * [x] Lambda deployed
 * [x] AWS timeout diagnosed
 * [x] Workload calibrated
-* [x] 128 MB baseline collected
+* [x] 128 MB benchmark
 * [x] 256 MB benchmark
 * [x] 512 MB benchmark
 * [x] 1024 MB benchmark
-* [ ] Final statistical analysis
-* [ ] Cost analysis
-* [ ] Charts
-* [ ] Final findings
+* [x] Raw results collected
+* [x] Performance analysis
+* [x] Memory analysis
+* [x] Cost analysis
+* [x] Speedup analysis
+* [x] Charts generated
+* [x] Final findings
 * [ ] Article
 * [ ] Publish
 
-## License
+---
+
+# Article
+
+Planned article:
+
+> **I Tested AWS Lambda at 128MB, 256MB, 512MB and 1GB: Here's What Happened**
+
+The article will cover:
+
+* Experimental methodology
+* AWS Lambda configuration
+* Local vs AWS behavior
+* Benchmark results
+* Performance comparison
+* Cost analysis
+* Charts
+* Findings
+* Practical conclusions
+
+---
+
+# License
 
 This project is intended for learning, experimentation, and reproducible AWS Lambda performance research.

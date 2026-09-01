@@ -11,10 +11,6 @@ venv/
 .env
 .env.*
 
-# Benchmark results
-results/*
-!results/.gitkeep
-
 # IDE
 .vscode/
 .idea/
