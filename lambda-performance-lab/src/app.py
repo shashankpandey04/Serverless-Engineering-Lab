@@ -18,7 +18,7 @@ def lambda_handler(event, context):
     data = b"A" * 10_000_000
     digest = hashlib.sha256()
 
-    for _ in range(100):
+    for _ in range(10):
         digest.update(data)
 
     duration_ms = (time.perf_counter() - start) * 1000

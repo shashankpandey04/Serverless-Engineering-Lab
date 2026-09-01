@@ -1,90 +1,49 @@
 # Lambda Performance Lab
 
-A benchmarking project that measures how different AWS Lambda memory configurations affect **execution performance, memory usage, and cost**.
-
-The project runs the same Lambda workload with different memory allocations and uses a local benchmark runner to invoke the deployed Lambda repeatedly, collect its results, and analyze the measurements.
+A benchmarking project to measure how AWS Lambda memory configuration affects **execution performance, memory usage, and cost**.
 
 ## Research Question
 
 > **How do Lambda memory configurations affect performance and cost?**
 
-AWS Lambda allows you to configure the memory available to a function.
+The experiment runs the same CPU-bound workload using:
 
-An important detail is that Lambda also provides additional CPU capacity as memory allocation increases.
+* 128 MB
+* 256 MB
+* 512 MB
+* 1024 MB
 
-This creates an interesting performance-versus-cost trade-off:
+Only the Lambda memory configuration changes between experiments.
 
-```text
-More Memory
-     ↓
-More CPU
-     ↓
-Potentially Faster Execution
-     ↓
-Higher Price per Unit of Execution
-```
-
-This project measures that trade-off instead of assuming that more memory is automatically better.
-
-## What This Project Does
-
-The experiment runs the **same Lambda function** using four memory configurations:
-
-| Configuration |  Memory |
-| ------------- | ------: |
-| A             |  128 MB |
-| B             |  256 MB |
-| C             |  512 MB |
-| D             | 1024 MB |
-
-For each configuration, the benchmark runner:
-
-1. Invokes the deployed AWS Lambda.
-2. Receives the result returned by the Lambda.
-3. Repeats the invocation multiple times.
-4. Collects execution measurements.
-5. Saves the measurements locally.
-6. Calculates performance statistics.
-7. Compares performance and cost across configurations.
-
-The Lambda itself does **not** save benchmark results.
-
-The Lambda measures its execution and returns the data to the runner.
+## Architecture
 
 ```text
-┌─────────────────────────────┐
-│        Your Computer        │
-│                             │
-│     benchmark/cpu.py        │
-│             │               │
-│             │ Boto3         │
-└─────────────┼───────────────┘
-              │
-              ▼
-┌─────────────────────────────┐
-│            AWS              │
-│                             │
-│      Lambda Function        │
-│        src/app.py           │
-│             │               │
-│        Run workload         │
-│             │               │
-│        Measure execution    │
-│             │               │
-│        Return result        │
-└─────────────┬───────────────┘
-              │
-              ▼
-┌─────────────────────────────┐
-│        Your Computer        │
-│                             │
-│      cpu.py receives        │
-│          the result         │
-│              │              │
-│              ▼              │
-│      results/results.json   │
-└─────────────────────────────┘
+Your PC
+┌─────────────────────────┐
+│ benchmark/cpu.py        │
+│                         │
+│ Boto3 → invoke Lambda   │
+└────────────┬────────────┘
+             │
+             ▼
+AWS Lambda
+┌─────────────────────────┐
+│ src/app.py              │
+│                         │
+│ Run CPU workload        │
+│ Measure execution       │
+│ Measure memory          │
+│ Return JSON             │
+└────────────┬────────────┘
+             │
+             ▼
+Your PC
+┌─────────────────────────┐
+│ results/results.json    │
+└─────────────────────────┘
 ```
+
+The Lambda **does not save results**. It returns measurements to the local benchmark script, which saves them locally.
 
 ## Project Structure
 
@@ -95,111 +54,42 @@ lambda-performance-lab/
 │   └── app.py
 │
 ├── benchmark/
-│   └── cpu
-.py
+│   └── cpu.py
 │
 ├── results/
 │   └── results.json
 │
 ├── template.yaml
+├── samconfig.toml
 ├── requirements.txt
 ├── README.md
+├── diagnose.md
 └── .gitignore
 ```
 
-### `src/app.py`
+### Files
 
-Contains the Lambda workload.
+| File                   | Purpose                             |
+| ---------------------- | ----------------------------------- |
+| `src/app.py`           | Lambda function and CPU workload    |
+| `benchmark/cpu.py`     | Local benchmark runner using Boto3  |
+| `results/results.json` | Locally collected benchmark data    |
+| `template.yaml`        | AWS SAM infrastructure definition   |
+| `samconfig.toml`       | Saved SAM deployment configuration  |
+| `diagnose.md`          | Development and troubleshooting log |
+| `requirements.txt`     | Python dependencies                 |
 
-The Lambda:
-
-* Executes the benchmark workload.
-* Measures execution duration.
-* Reads the Lambda memory limit.
-* Measures process memory usage.
-* Returns the measurements as JSON.
-
-### `benchmarkcpur.py`
-
-Runs locally on the developer's computer.
-
-It:
-
-* Uses Boto3 to invoke AWS Lambda.
-* Runs multiple benchmark iterations.
-* Receives the Lambda response.
-* Adds local benchmark metadata.
-* Calculates basic statistics.
-* Saves the results locally.
-
-### `results/results.json`
-
-Contains the benchmark measurements returned by Lambda.
-
-The results are stored locally because the benchmark runner is responsible for collecting and storing experimental data.
-
-### `template.yaml`
-
-Defines the Lambda infrastructure using AWS SAM.
-
-### `requirements.txt`
-
-Contains Python dependencies required by the benchmark runner.
-
-## Current Lambda Workload
-
-The current workload is CPU-bound.
-
-The Lambda performs repeated SHA-256 hashing against a fixed dataset.
-
-The purpose is to create a computational workload where differences in available CPU capacity can be observed as Lambda memory allocation changes.
-
-The workload is intentionally deterministic.
-
-The resulting hash is returned with every invocation so that the benchmark can verify that every memory configuration is performing the same computation.
-
-## Lambda Response
-
-Each Lambda invocation returns data similar to:
-
-```json
-{
-  "duration_ms": 811.09,
-  "memory_limit_mb": "128",
-  "memory_used_mb": 28.41,
-  "request_id": "example-request-id",
-  "digest": "example-digest"
-}
-```
-
-### Fields
-
-| Field             | Description                                         |
-| ----------------- | --------------------------------------------------- |
-| `duration_ms`     | Time taken by the benchmark workload                |
-| `memory_limit_mb` | Memory configured for the Lambda                    |
-| `memory_used_mb`  | Memory used by the Lambda process                   |
-| `request_id`      | AWS Lambda invocation identifier                    |
-| `digest`          | SHA-256 result used to verify identical computation |
-
-The actual request ID and digest values will differ between invocations.
-
-## Local Development
-
-The Lambda can be tested locally using AWS SAM and Docker before deploying it to AWS.
-
-This is useful for verifying the Lambda code and benchmark workflow without using real AWS Lambda executions.
-
-### Requirements
+## Requirements
 
 Install:
 
-* Python
+* Python 3.13+
 * Docker
 * AWS CLI
 * AWS SAM CLI
+* An AWS account
 
-Verify the installations:
+Verify:
 
 ```powershell
 python --version
@@ -208,9 +98,16 @@ aws --version
 sam --version
 ```
 
-## Python Environment
+## Setup
 
-Create a virtual environment:
+### 1. Clone the repository
+
+```powershell
+git clone <repository-url>
+cd lambda-performance-lab
+```
+
+### 2. Create a virtual environment
 
 ```powershell
 python -m venv .venv
@@ -222,15 +119,37 @@ Activate it:
 .venv\Scripts\activate
 ```
 
-Install dependencies:
+### 3. Install dependencies
 
 ```powershell
 pip install -r requirements.txt
 ```
 
+## AWS Configuration
+
+Configure the AWS CLI using an IAM identity with permission to deploy and invoke the required resources:
+
+```powershell
+aws configure
+```
+
+Set the region to the region used for the experiment, for example:
+
+```text
+ap-south-1
+```
+
+Verify the configuration:
+
+```powershell
+aws sts get-caller-identity
+```
+
 ## Local Lambda Testing
 
-Build the SAM application:
+Local testing uses **AWS SAM + Docker**.
+
+Build the project:
 
 ```powershell
 sam build
@@ -242,105 +161,129 @@ Invoke the Lambda locally:
 sam local invoke BenchmarkFunction
 ```
 
-SAM runs the Lambda inside a Docker container that emulates the AWS Lambda runtime.
+This validates the Lambda code and response format before using real AWS Lambda executions.
 
-The local test is useful for verifying that the Lambda returns the expected benchmark data.
+**Local performance numbers are not used as the final benchmark data.**
 
-## AWS Configuration
+## Deploy to AWS
 
-The benchmark runner invokes the real AWS Lambda using Boto3.
+The Lambda is deployed using AWS SAM.
 
-Configure the AWS CLI with an IAM identity that has permission to use the required AWS services:
-
-```powershell
-aws configure
-```
-
-Verify the configured identity:
-
-```powershell
-aws sts get-caller-identity
-```
-
-The command should return the AWS account and IAM identity being used by the CLI.
-
-## Deploying the Lambda
-
-Build the project:
+Build:
 
 ```powershell
 sam build
 ```
 
-Deploy it to AWS:
+First deployment:
 
 ```powershell
 sam deploy --guided
 ```
 
-During the guided deployment, provide the desired AWS region and allow SAM to create the required deployment resources.
-
-After deployment, SAM will create the Lambda function defined in `template.yaml`.
-
-The actual AWS Lambda function name should then be used by `benchmarkcpur.py`.
-
-## Running the Benchmark
-
-Update the Lambda function name in:
+Recommended configuration:
 
 ```text
-benchmarkcpu.pyy
+Stack Name: lambda-performance-lab
+AWS Region: ap-south-1
+Confirm changeset: Y
+Allow SAM CLI IAM role creation: Y
+Disable rollback: N
+Save arguments to configuration file: Y
 ```
 
-Set:
+After the first deployment, `samconfig.toml` stores the deployment configuration.
+
+Future deployments can use:
+
+```powershell
+sam build
+sam deploy
+```
+
+## Verify the Lambda
+
+List the deployed function:
+
+```powershell
+aws lambda list-functions `
+    --region ap-south-1 `
+    --query "Functions[?starts_with(FunctionName, 'lambda-performance-lab')].{Name:FunctionName,Memory:MemorySize,Runtime:Runtime}" `
+    --output table
+```
+
+Check the configuration:
+
+```powershell
+aws lambda get-function-configuration `
+    --function-name <FUNCTION_NAME> `
+    --query "{Memory:MemorySize,Runtime:Runtime,Timeout:Timeout}"
+```
+
+## Run the Benchmark
+
+`benchmark/cpu.py` runs **locally** and invokes the deployed Lambda using Boto3.
+
+Set the deployed Lambda name in:
+
+```text
+benchmark/cpu.py
+```
 
 ```python
 FUNCTION_NAME = "YOUR_LAMBDA_FUNCTION_NAME"
 ```
 
-to the actual deployed Lambda function name.
-
-Then run the benchmark locally:
+Then run:
 
 ```powershell
-python benchmarkcpu.pyy
+python benchmark\cpu.py
 ```
 
-The runner invokes the Lambda multiple times.
+The runner:
 
-For each invocation it receives the measurements returned by Lambda and stores them in:
+1. Invokes the AWS Lambda.
+2. Receives the Lambda's JSON response.
+3. Repeats the benchmark.
+4. Adds local run metadata.
+5. Calculates basic statistics.
+6. Saves the measurements to `results/results.json`.
 
-```text
-results/results.json
+## Current CPU Workload
+
+The Lambda runs a deterministic SHA-256 workload.
+
+The workload uses a fixed 10 MB dataset and performs repeated hashing operations.
+
+The resulting SHA-256 digest is returned with every invocation.
+
+The digest is used to verify that every benchmark configuration performs the same computation.
+
+## Lambda Response
+
+A successful invocation returns:
+
+```json
+{
+  "duration_ms": 4375.58,
+  "memory_limit_mb": "128",
+  "memory_used_mb": 28.6,
+  "request_id": "...",
+  "digest": "..."
+}
 ```
 
-## Benchmark Flow
+| Field             | Meaning                                  |
+| ----------------- | ---------------------------------------- |
+| `duration_ms`     | Time measured for the workload           |
+| `memory_limit_mb` | Configured Lambda memory                 |
+| `memory_used_mb`  | Observed process memory                  |
+| `request_id`      | Lambda invocation ID                     |
+| `digest`          | SHA-256 result for workload verification |
 
-```text
-Build Lambda
-     ↓
-Deploy to AWS
-     ↓
-Configure Lambda memory
-     ↓
-Run benchmark runner locally
-     ↓
-Boto3 invokes Lambda
-     ↓
-Lambda executes workload
-     ↓
-Lambda returns measurements
-     ↓
-Runner collects results
-     ↓
-Results saved locally
-     ↓
-Analyze results
-```
+## Benchmark Procedure
 
-## Benchmark Configuration
-
-The experiment compares four Lambda memory allocations:
+The experiment compares:
 
 ```text
 128 MB
@@ -349,216 +292,184 @@ The experiment compares four Lambda memory allocations:
 1024 MB
 ```
 
-The Lambda workload remains unchanged between configurations.
-
-The primary experimental variable is:
+For each configuration:
 
 ```text
-Memory Allocation
+Change MemorySize
+      ↓
+sam build
+      ↓
+sam deploy
+      ↓
+Verify configuration
+      ↓
+Run benchmark
+      ↓
+Save results locally
 ```
 
-The following should remain consistent:
+The following remain unchanged:
 
-* Lambda source code
-* Runtime
+* Lambda code
+* Python runtime
 * Architecture
 * AWS region
-* Workload
+* CPU workload
 * Input data
-* Number of iterations
+* Number of benchmark runs
 * Benchmark procedure
 
-## Benchmark Results
+This keeps **memory allocation as the primary experimental variable**.
 
-The final results will be populated from actual AWS Lambda executions.
+## Results
 
+Final results will be populated from real AWS Lambda executions.
 ### Performance
 
-|  Memory | Average Duration |  Median |     p95 |     p99 |
-| ------: | ---------------: | ------: | ------: | ------: |
-|  128 MB |          Pending | Pending | Pending | Pending |
-|  256 MB |          Pending | Pending | Pending | Pending |
-|  512 MB |          Pending | Pending | Pending | Pending |
-| 1024 MB |          Pending | Pending | Pending | Pending |
+|  Memory |    Average |     Median |        p95 |        p99 |
+| ------: | ---------: | ---------: | ---------: | ---------: |
+|  128 MB | 4147.03 ms | 4141.14 ms | 4259.10 ms | 4272.88 ms |
+|  256 MB | 1930.65 ms | 1932.88 ms | 1952.60 ms | 1957.24 ms |
+|  512 MB |  875.62 ms |  873.10 ms |  899.50 ms |  906.16 ms |
+| 1024 MB |  517.86 ms |  518.57 ms |  530.82 ms |  534.89 ms |
 
 ### Memory Usage
 
-|  Memory | Average Memory Used | Maximum Memory Used | Utilization |
-| ------: | ------------------: | ------------------: | ----------: |
-|  128 MB |             Pending |             Pending |     Pending |
-|  256 MB |             Pending |             Pending |     Pending |
-|  512 MB |             Pending |             Pending |     Pending |
-| 1024 MB |             Pending |             Pending |     Pending |
+|  Memory | Average Used | Maximum Used | Utilization |
+| ------: | -----------: | -----------: | ----------: |
+|  128 MB |     28.77 MB |     28.77 MB |      22.48% |
+|  256 MB |     28.80 MB |     28.80 MB |      11.25% |
+|  512 MB |     28.74 MB |     28.81 MB |       5.63% |
+| 1024 MB |     28.47 MB |     28.49 MB |       2.78% |
+
+
+
+
+
 
 ### Cost
 
-|  Memory | Cost / Invocation | Cost / 1,000 Invocations | Cost / 1M Invocations |
-| ------: | ----------------: | -----------------------: | --------------------: |
-|  128 MB |           Pending |                  Pending |               Pending |
-|  256 MB |           Pending |                  Pending |               Pending |
-|  512 MB |           Pending |                  Pending |               Pending |
-| 1024 MB |           Pending |                  Pending |               Pending |
+|  Memory | Cost / Invocation | Cost / 1K | Cost / 1M |
+| ------: | ----------------: | --------: | --------: |
+|  128 MB |           Pending |   Pending |   Pending |
+|  256 MB |           Pending |   Pending |   Pending |
+|  512 MB |           Pending |   Pending |   Pending |
+| 1024 MB |           Pending |   Pending |   Pending |
 
 ### Performance vs Cost
 
-|  Memory | Relative Performance | Relative Cost | Performance / Cost |
-| ------: | -------------------: | ------------: | -----------------: |
-|  128 MB |              Pending |       Pending |            Pending |
-|  256 MB |              Pending |       Pending |            Pending |
-|  512 MB |              Pending |       Pending |            Pending |
-| 1024 MB |              Pending |       Pending |            Pending |
+|  Memory | Relative Performance | Relative Cost | Efficiency |
+| ------: | -------------------: | ------------: | ---------: |
+|  128 MB |              Pending |       Pending |    Pending |
+|  256 MB |              Pending |       Pending |    Pending |
+|  512 MB |              Pending |       Pending |    Pending |
+| 1024 MB |              Pending |       Pending |    Pending |
 
-These values will be calculated from the actual benchmark dataset.
+## Current Results
+
+### 128 MB Baseline
+
+The first successful AWS benchmark contains **10 runs**.
+
+Observed values:
+
+* Average duration: approximately **4.15 seconds**
+* Median duration: approximately **4.12 seconds**
+* Minimum: **4.056 seconds**
+* Maximum: **4.276 seconds**
+* Memory used: approximately **28.77 MB**
+* Successful runs: **10/10**
+
+The complete raw measurements are stored in:
+
+```text
+results/results.json
+```
+
+## Local vs AWS
+
+Local SAM/Docker testing is used for **correctness and development**.
+
+It is not used as the authoritative performance dataset.
+
+The same workload initially behaved very differently locally and on AWS. The original workload completed locally in under one second but timed out at 128 MB on AWS.
+
+The workload was therefore reduced and successfully calibrated on the 128 MB AWS Lambda configuration.
+
+See `diagnose.md` for the complete debugging record.
 
 ## Analysis
 
-The benchmark is not intended to identify the configuration with the lowest execution time alone.
-
-The analysis considers:
+The experiment evaluates three primary factors:
 
 ```text
 Performance
      +
-Memory Utilization
+Memory Usage
      +
-Execution Cost
+Cost
 ```
 
-A higher-memory configuration may execute a workload significantly faster because it receives more CPU capacity.
+The goal is not simply to find the fastest Lambda.
 
-However, higher memory also increases the cost of each unit of execution.
+The goal is to determine:
 
-The goal is therefore to identify the configuration that provides the best balance for the tested workload.
-
-## Findings
-
-This section will be updated after the AWS benchmark has been completed.
-
-### Execution Performance
-
-**Pending benchmark results.**
-
-### Memory Utilization
-
-**Pending benchmark results.**
-
-### Cost
-
-**Pending benchmark results.**
-
-### Best Configuration
-
-**Pending benchmark results.**
-
-### Key Observation
-
-**Pending benchmark results.**
-
-## Why the Results Matter
-
-Lambda memory selection is often treated as a simple choice between:
-
-```text
-Cheaper
-vs.
-Faster
-```
-
-The relationship is more nuanced because increasing memory also increases available CPU capacity.
-
-This experiment provides measured data for understanding that trade-off for the specific workload being tested.
-
-The results should help answer a practical question:
-
-> **What Lambda memory configuration provides the best balance between execution speed and cost for this workload?**
+> **Which memory configuration provides the best performance-to-cost trade-off for this CPU-bound workload?**
 
 ## Limitations
 
-The results are experimental measurements and are not universal Lambda performance guarantees.
+Results are specific to the tested workload and environment.
 
-Performance can vary because of:
+Lambda performance can vary due to factors including:
 
-* AWS infrastructure conditions
 * Cold starts
 * Warm execution environments
 * Runtime initialization
-* Network conditions
-* AWS region
-* External service latency
+* AWS infrastructure conditions
+* Region
 * Runtime behavior
 
-The benchmark therefore focuses on comparing configurations under the same experimental conditions.
-
-## Reproducibility
-
-The project keeps the Lambda code, infrastructure definition, benchmark runner, and collected results in the repository.
-
-A developer can reproduce the experiment by:
-
-1. Cloning the repository.
-2. Installing the required tools.
-3. Configuring AWS credentials.
-4. Building the SAM application.
-5. Deploying the Lambda.
-6. Running the benchmark runner.
-7. Analyzing the collected results.
-
-## Future Experiments
-
-The current implementation focuses on a CPU-bound workload.
-
-The project can later be extended with:
-
-* Memory-bound workloads
-* I/O-bound workloads
-* Cold-start benchmarks
-* Different payload sizes
-* Different runtimes
-* ARM64 vs x86_64
-* Different execution patterns
-* Larger benchmark samples
-
-These extensions can help determine whether the optimal Lambda memory configuration changes depending on workload characteristics.
+The experiment therefore focuses on comparing configurations under consistent conditions.
 
 ## Article
 
-The findings from this experiment will be documented in:
+### I Tested AWS Lambda at 128MB, 256MB, 512MB and 1GB: Here's What Happened
 
-**I Tested AWS Lambda at 128MB, 256MB, 512MB and 1GB: Here's What Happened**
-
-The article will include:
+The final article will document:
 
 * Experimental methodology
-* AWS environment
-* Benchmark results
-* Performance comparisons
+* AWS configuration
+* Raw benchmark results
+* Performance comparison
 * Cost analysis
 * Charts
-* Key findings
-* Practical recommendations
+* Findings
+* Practical conclusions
 
 ## Status
 
-**In Progress**
-
-* [x] Define research question
-* [x] Define memory configurations
-* [x] Define CPU-bound workload
-* [x] Create Lambda function
-* [x] Create SAM template
-* [x] Configure local Lambda testing
-* [x] Create local benchmark runner
-* [x] Verify Lambda locally
-* [ ] Deploy Lambda to AWS
-* [ ] Run AWS benchmark
-* [ ] Collect benchmark dataset
-* [ ] Calculate performance statistics
-* [ ] Calculate Lambda costs
-* [ ] Generate charts
-* [ ] Complete analysis
-* [ ] Write article
-* [ ] Publish results
+* [x] Research question defined
+* [x] Project structure created
+* [x] Lambda implemented
+* [x] SAM template created
+* [x] Local Lambda testing
+* [x] Benchmark runner created
+* [x] AWS CLI configured
+* [x] SAM CLI configured
+* [x] Lambda deployed
+* [x] AWS timeout diagnosed
+* [x] Workload calibrated
+* [x] 128 MB baseline collected
+* [x] 256 MB benchmark
+* [x] 512 MB benchmark
+* [x] 1024 MB benchmark
+* [ ] Final statistical analysis
+* [ ] Cost analysis
+* [ ] Charts
+* [ ] Final findings
+* [ ] Article
+* [ ] Publish
 
 ## License
 
-This project is open source and intended for experimentation, learning, and reproducible AWS Lambda performance research.
+This project is intended for learning, experimentation, and reproducible AWS Lambda performance research.

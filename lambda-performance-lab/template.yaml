@@ -8,5 +8,5 @@ Resources:
       CodeUri: src/
       Handler: app.lambda_handler
       Runtime: python3.13
-      MemorySize: 128
+      MemorySize: 1024
       Timeout: 30

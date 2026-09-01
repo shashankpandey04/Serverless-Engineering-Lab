@@ -6,7 +6,7 @@ from statistics import mean, median
 import boto3
 
 
-FUNCTION_NAME = "BenchmarkFunction"
+FUNCTION_NAME = "lambda-performance-lab-BenchmarkFunction-S8eaWcgRF767"
 RUNS = 10
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -22,22 +22,37 @@ def invoke_lambda():
         Payload=b"{}",
     )
 
-    if "FunctionError" in response:
-        raise RuntimeError(
-            f"Lambda execution failed: {response['FunctionError']}"
-        )
-
     payload = response["Payload"].read()
 
-    return json.loads(payload)
+    if "FunctionError" in response:
+        error = json.loads(payload)
+        raise RuntimeError(
+            f"Lambda execution failed:\n"
+            f"{json.dumps(error, indent=2)}"
+        )
 
+    return json.loads(payload)
 
 def save_results(results):
     RESULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-    with RESULTS_FILE.open("w") as file:
-        json.dump(results, file, indent=2)
+    if RESULTS_FILE.exists():
+        with RESULTS_FILE.open("r") as file:
+            existing_results = json.load(file)
+    else:
+        existing_results = {}
 
+    if isinstance(existing_results, list):
+        old_memory = existing_results[0]["memory_limit_mb"]
+        existing_results = {
+            old_memory: existing_results
+        }
+
+    memory = results[0]["memory_limit_mb"]
+    existing_results[memory] = results
+
+    with RESULTS_FILE.open("w") as file:
+        json.dump(existing_results, file, indent=2)
 
 def run_benchmark():
     results = []
